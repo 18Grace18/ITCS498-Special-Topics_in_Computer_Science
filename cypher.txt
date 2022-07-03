@@ -1,0 +1,135 @@
+CREATE CONSTRAINT ON (c:Client) ASSERT c.id IS UNIQUE;
+CREATE CONSTRAINT ON (b:Bank) ASSERT b.id IS UNIQUE;
+CREATE CONSTRAINT ON (m:Merchant) ASSERT m.id IS UNIQUE;
+CREATE CONSTRAINT ON (m:Mule) ASSERT m.id IS UNIQUE;
+
+CREATE CONSTRAINT ON (tx:Transaction) ASSERT tx.id IS UNIQUE;
+CREATE CONSTRAINT ON (c:CashIn) ASSERT c.id IS UNIQUE;
+CREATE CONSTRAINT ON (c:CashOut) ASSERT c.id IS UNIQUE;
+CREATE CONSTRAINT ON (d:Debit) ASSERT d.id IS UNIQUE;
+CREATE CONSTRAINT ON (p:Payment) ASSERT p.id IS UNIQUE;
+CREATE CONSTRAINT ON (t:Transfer) ASSERT t.id IS UNIQUE;
+
+CREATE CONSTRAINT ON (e:Email) ASSERT e.email IS UNIQUE;
+CREATE CONSTRAINT ON (s:SSN) ASSERT s.ssn IS UNIQUE;
+CREATE CONSTRAINT ON (p:Phone) ASSERT p.phoneNumber IS UNIQUE;
+
+
+// import client data
+:auto USING PERIODIC COMMIT
+LOAD CSV WITH HEADERS
+FROM 'https://raw.githubusercontent.com/18Grace18/ITCS498-Special-Topics_in_Computer_Science/main/clients.csv'
+AS row 
+MERGE (c:Client {clientID: row.ID})
+ON CREATE SET
+c.email = row.EMAIL,
+c.id= row.ID,
+c.isfraud = row.ISFRAUD,
+c.name = row.NAME,
+c.phoneNumber = row.PHONENUMBER,
+c.ssn = row.SSN
+
+// import merchant data
+:auto USING PERIODIC COMMIT
+LOAD CSV WITH HEADERS
+FROM 'https://raw.githubusercontent.com/18Grace18/ITCS498-Special-Topics_in_Computer_Science/main/merchants.csv'
+AS row 
+MERGE (m:Merchant {merchantID: row.ID})
+ON CREATE SET
+m.highrisk = row.HIGHRISK,
+m.id = row.ID,
+m.name = row.NAME
+
+// import relationships 
+// CASH_IN: Client -> Merchant
+// CASH_OUT: Client -> Merchant
+// PAYMENT: Client -> Merchant
+// TRANSFER: Client -> Client or Mule 
+// DEBIT: Client -> Bank
+
+// set bank
+:auto USING PERIODIC COMMIT
+LOAD CSV WITH HEADERS
+FROM 'https://raw.githubusercontent.com/18Grace18/ITCS498-Special-Topics_in_Computer_Science/main/transactions.csv'
+AS row
+WITH row WHERE row.TYPEDEST = "BANK"
+MERGE (b:Bank {bankID: row.IDDEST})
+ON CREATE SET
+b.id = row.IDDEST,
+b.name = row.NAMEDEST
+
+// set mule
+MATCH (c:Client {isfraud: 'true'})
+SET c:Mule
+
+// unwind email
+MATCH (c:Client)
+UNWIND c.email AS email
+WITH  email, collect(c) AS emails
+MERGE (e:Email {email:email})
+WITH e, emails
+UNWIND emails AS c
+WITH e,c
+MERGE (c)-[:HAS_EMAIL]->(e);
+MATCH (c:Client)
+SET c.email = null
+
+// ssn
+MATCH (c:Client)
+UNWIND c.ssn AS ssn
+WITH  ssn, collect(c) AS ssns
+MERGE (s:SSN {ssn:ssn})
+WITH s, ssns
+UNWIND ssns AS c
+WITH s,c
+MERGE (c)-[:HAS_SSN]->(s);
+MATCH (c:Client)
+SET c.ssn = null
+
+// phone
+MATCH (c:Client)
+UNWIND c.phoneNumber AS phoneNumber
+WITH  phoneNumber, collect(c) AS phoneNumbers
+MERGE (p:Phone {phoneNumber:phoneNumber})
+WITH p, phoneNumbers
+UNWIND phoneNumbers AS c
+WITH p,c
+MERGE (c)-[:HAS_PHONE]->(p);
+MATCH (c:Client)
+SET c.phoneNumber = null
+
+// set transactions (not work yet) 
+:auto USING PERIODIC COMMIT
+LOAD CSV WITH HEADERS
+FROM 'https://raw.githubusercontent.com/18Grace18/ITCS498-Special-Topics_in_Computer_Science/main/transactions.csv'
+AS row
+WITH row WHERE row.ACTION = "CASH_IN"
+MATCH (c:Client {clientID: row.IDORIG})
+MATCH (m:Merchant {merchantID: row.IDDEST})
+MERGE (t:Transaction {transactionID: "tx-"+row.GLOBALSTEP})
+ON CREATE SET
+t.id = "tx-"+row.GLOBALSTEP,
+t.amount = row.AMOUNT,
+t.globalstep = row.GLOBALSTEP,
+t.isflaggedfraud = row.ISFLAGGEDFRAUD
+SET t:CashIn
+
+MERGE (c)-[:PERFORMED]->(tx)
+MERGE (tx)-[:TO]->(m)
+--------------------------------------------------------------------------------------------------------
+// relationship query
+MATCH (p)-[:HAS_EMAIL]->(m)
+RETURN p,m
+LIMIT 10
+
+// match shared info
+MATCH (c1:Client)-[:HAS_EMAIL|:HAS_PHONE|:HAS_SSN] ->(n)<- [:HAS_EMAIL|:HAS_PHONE|:HAS_SSN]-(c2:Client)
+WHERE id(c1) < id(c2)
+WITH c1, c2, count(*) as cnt
+MERGE (c1) - [:SHARED_IDENTIFIERS {count: cnt}] -> (c2);
+
+MATCH p = (:Client) - [s:SHARED_IDENTIFIERS] -> (:Client) WHERE s.count >= 2 RETURN p 
+
+MATCH (c1:Client)-[:HAS_EMAIL|:HAS_PHONE|:HAS_SSN] ->(n)<- [:HAS_EMAIL|:HAS_PHONE|:HAS_SSN]-(c2:Client)
+WHERE id(c1) < id(c2)
+RETURN c1,c2,n
