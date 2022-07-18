@@ -1,0 +1,96 @@
+MOCK_DATA
+
+:auto USING PERIODIC COMMIT
+LOAD CSV WITH HEADERS
+FROM 'https://raw.githubusercontent.com/18Grace18/ITCS498-Special-Topics_in_Computer_Science/main/mock_client.csv'
+AS row 
+MERGE (c:Client {clientID: row.id})
+ON CREATE SET
+c.id= row.id,
+c.name = row.name,
+c.email = row.email,
+c.phoneNumber = row.phone,
+c.ssn = row.ssn,
+c.address = row.address
+
+//unwind email
+MATCH (c:Client)
+UNWIND c.email AS email
+WITH  email, collect(c) AS emails
+MERGE (e:Email {email:email})
+WITH e, emails
+UNWIND emails AS c
+WITH e,c
+MERGE (c)-[:HAS_EMAIL]->(e);
+MATCH (c:Client)
+SET c.email = null
+
+//phone
+MATCH (c:Client)
+UNWIND c.phoneNumber AS phoneNumber
+WITH  phoneNumber, collect(c) AS phoneNumbers
+MERGE (p:Phone {phoneNumber:phoneNumber})
+WITH p, phoneNumbers
+UNWIND phoneNumbers AS c
+WITH p,c
+MERGE (c)-[:HAS_PHONE]->(p);
+MATCH (c:Client)
+SET c.phoneNumber = null
+
+//address
+MATCH (c:Client)
+UNWIND c.address AS address
+WITH  address, collect(c) AS addresses
+MERGE (a:Address {address:address})
+WITH a, addresses
+UNWIND addresses AS c
+WITH a,c
+MERGE (c)-[:HAS_ADDRESS]->(a);
+MATCH (c:Client)
+SET c.address = null
+
+//ssn
+MATCH (c:Client)
+UNWIND c.ssn AS ssn
+WITH  ssn, collect(c) AS ssns
+MERGE (s:SSN {ssn:ssn})
+WITH s, ssns
+UNWIND ssns AS c
+WITH s,c
+MERGE (c)-[:HAS_SSN]->(s);
+MATCH (c:Client)
+SET c.ssn = null
+
+//credit card
+:auto USING PERIODIC COMMIT
+LOAD CSV WITH HEADERS
+FROM 'https://raw.githubusercontent.com/18Grace18/ITCS498-Special-Topics_in_Computer_Science/main/mock_credit.csv'
+AS row 
+MERGE (cr:Credit {creditID: row.id})
+ON CREATE SET
+cr.id= row.id,
+cr.balance = row.balance,
+cr.limit = row.limit
+
+MATCH(a: Client)
+WITH a, a.id as client_id
+MATCH (b: Credit) 
+WHERE client_id = b.id
+MERGE (a)-[r: HAS_CREDIT]->(b)
+
+//loan 
+:auto USING PERIODIC COMMIT
+LOAD CSV WITH HEADERS
+FROM 'https://raw.githubusercontent.com/18Grace18/ITCS498-Special-Topics_in_Computer_Science/main/mock_loan.csv'
+AS row 
+MERGE (b:UnsecuredLoan {accountID: row.id})
+ON CREATE SET
+b.id= row.id,
+b.balance = row.balance,
+b.limit = row.limit
+
+MATCH(a: Client)
+WITH a, a.id as client_id
+MATCH (b: UnsecuredLoan) 
+WHERE client_id = b.id
+MERGE (a)-[r: HAS_UNSECUREDLOAN]->(b)
